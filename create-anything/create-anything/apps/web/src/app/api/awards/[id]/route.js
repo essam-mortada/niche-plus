@@ -4,29 +4,12 @@ export async function GET(request, { params }) {
   try {
     const { id } = params;
 
-    if (!id) {
-      return Response.json({ error: "Award ID is required" }, { status: 400 });
-    }
-
     const [award] = await sql`
-      SELECT 
-        a.*,
-        CASE 
-          WHEN a.event_date < CURRENT_DATE THEN 'completed'
-          WHEN a.event_date = CURRENT_DATE THEN 'ongoing'
-          ELSE 'upcoming'
-        END as computed_status
-      FROM awards a
-      WHERE a.id = ${id} AND a.deleted_at IS NULL
+      SELECT * FROM awards WHERE id = ${id} AND deleted_at IS NULL
     `;
 
     if (!award) {
       return Response.json({ error: "Award not found" }, { status: 404 });
-    }
-
-    // Use computed status if the database status doesn't reflect current state
-    if (award.computed_status !== award.status) {
-      award.status = award.computed_status;
     }
 
     return Response.json(award);
@@ -39,54 +22,37 @@ export async function GET(request, { params }) {
 export async function PUT(request, { params }) {
   try {
     const { id } = params;
-    const updates = await request.json();
+    const body = await request.json();
+    const {
+      title,
+      description,
+      location,
+      event_date,
+      image,
+      status,
+    } = body;
 
-    if (!id) {
-      return Response.json({ error: "Award ID is required" }, { status: 400 });
-    }
-
-    // Build dynamic update query
-    const updateFields = [];
-    const values = [];
-    let paramIndex = 1;
-
-    const allowedFields = [
-      "name",
-      "slug",
-      "country",
-      "city",
-      "venue",
-      "event_date",
-      "cover_image",
-      "summary",
-      "long_description",
-      "status",
-      "seo_title",
-      "seo_description",
-      "recap_links",
-    ];
-
-    for (const [key, value] of Object.entries(updates)) {
-      if (allowedFields.includes(key)) {
-        updateFields.push(`${key} = $${paramIndex}`);
-        values.push(value);
-        paramIndex++;
-      }
-    }
-
-    if (updateFields.length === 0) {
+    // Validate required fields
+    if (!title || !location || !event_date) {
       return Response.json(
-        { error: "No valid fields to update" },
+        { error: "Title, location, and event date are required" },
         { status: 400 },
       );
     }
 
-    updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
-
-    const [updatedAward] = await sql(
-      `UPDATE awards SET ${updateFields.join(", ")} WHERE id = $${paramIndex} AND deleted_at IS NULL RETURNING *`,
-      [...values, id],
-    );
+    // Update award
+    const [updatedAward] = await sql`
+      UPDATE awards
+      SET
+        title = ${title},
+        description = ${description || null},
+        location = ${location},
+        event_date = ${event_date},
+        image = ${image || null},
+        status = ${status || 'upcoming'}
+      WHERE id = ${id}
+      RETURNING *
+    `;
 
     if (!updatedAward) {
       return Response.json({ error: "Award not found" }, { status: 404 });
@@ -95,7 +61,10 @@ export async function PUT(request, { params }) {
     return Response.json(updatedAward);
   } catch (error) {
     console.error("Error updating award:", error);
-    return Response.json({ error: "Failed to update award" }, { status: 500 });
+    return Response.json(
+      { error: "Failed to update award" },
+      { status: 500 },
+    );
   }
 }
 
@@ -103,15 +72,12 @@ export async function DELETE(request, { params }) {
   try {
     const { id } = params;
 
-    if (!id) {
-      return Response.json({ error: "Award ID is required" }, { status: 400 });
-    }
-
+    // Soft delete award
     const [deletedAward] = await sql`
-      UPDATE awards 
-      SET deleted_at = CURRENT_TIMESTAMP 
-      WHERE id = ${id} AND deleted_at IS NULL
-      RETURNING id
+      UPDATE awards
+      SET deleted_at = NOW()
+      WHERE id = ${id}
+      RETURNING *
     `;
 
     if (!deletedAward) {
@@ -121,6 +87,9 @@ export async function DELETE(request, { params }) {
     return Response.json({ message: "Award deleted successfully" });
   } catch (error) {
     console.error("Error deleting award:", error);
-    return Response.json({ error: "Failed to delete award" }, { status: 500 });
+    return Response.json(
+      { error: "Failed to delete award" },
+      { status: 500 },
+    );
   }
 }

@@ -16,10 +16,7 @@ import {
   MessageSquare,
   BarChart3,
   Settings,
-  Eye,
   Plus,
-  Edit,
-  Trash2,
 } from "lucide-react-native";
 import {
   useFonts,
@@ -50,7 +47,7 @@ export default function AdminCMSScreen() {
   const { data: cmsData, refetch } = useQuery({
     queryKey: ["cms-overview"],
     queryFn: async () => {
-      const [analytics, users, categories, articlesResponse, awards] =
+      const [analytics, users, categories, articlesResponse, awardsResponse] =
         await Promise.all([
           fetch("/api/admin/analytics?period=7").then((r) => r.json()),
           fetch("/api/admin/users?limit=5").then((r) => r.json()),
@@ -61,6 +58,7 @@ export default function AdminCMSScreen() {
 
       // Handle different response formats
       const articles = articlesResponse?.articles || articlesResponse || [];
+      const awards = awardsResponse?.awards || awardsResponse || [];
 
       return { analytics, users, categories, articles, awards };
     },
@@ -114,13 +112,13 @@ export default function AdminCMSScreen() {
     {
       icon: Award,
       title: "Awards",
-      subtitle: `${cmsData?.awards?.length || 0} awards`,
+      subtitle: `${cmsData?.awards?.pagination?.total || 0} awards`,
       color: "#F59E0B",
       route: "/admin/awards",
       stats: {
-        total: cmsData?.awards?.length || 0,
+        total: cmsData?.awards?.pagination?.total || 0,
         upcoming:
-          cmsData?.awards?.filter((a) => a.status === "upcoming")?.length || 0,
+          cmsData?.awards?.awards?.filter((a) => a.status === "upcoming")?.length || 0,
       },
     },
     {
