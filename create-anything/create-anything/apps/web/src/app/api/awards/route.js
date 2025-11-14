@@ -2,18 +2,70 @@ import sql from "@/app/api/utils/sql";
 
 export async function GET(request) {
   try {
-    const awards = await sql`
-      SELECT * FROM awards 
-      ORDER BY 
-        CASE 
-          WHEN status = 'upcoming' THEN 1
-          WHEN status = 'ongoing' THEN 2
-          ELSE 3
-        END,
-        event_date DESC
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get("page")) || 1;
+    const limit = parseInt(searchParams.get("limit")) || 20;
+    const search = searchParams.get("search") || "";
+    const status = searchParams.get("status");
+    const sortBy = searchParams.get("sortBy") || "event_date";
+    const sortOrder = searchParams.get("sortOrder") || "DESC";
+
+    const offset = (page - 1) * limit;
+
+    // Build where clause
+    let whereConditions = ["deleted_at IS NULL"]; // Soft delete filter
+    let queryParams = [];
+    let paramIndex = 1;
+
+    if (search) {
+      whereConditions.push(`(
+        LOWER(title) LIKE LOWER($${paramIndex}) OR
+        LOWER(description) LIKE LOWER($${paramIndex}) OR
+        LOWER(location) LIKE LOWER($${paramIndex})
+      )`);
+      queryParams.push(`%${search}%`);
+      paramIndex++;
+    }
+
+    if (status) {
+      whereConditions.push(`status = $${paramIndex}`);
+      queryParams.push(status);
+      paramIndex++;
+    }
+
+    const whereClause = `WHERE ${whereConditions.join(" AND ")}`;
+
+    // Get awards
+    const awardsQuery = `
+      SELECT *
+      FROM awards
+      ${whereClause}
+      ORDER BY ${sortBy} ${sortOrder}
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
     `;
 
-    return Response.json(awards);
+    queryParams.push(limit, offset);
+
+    const awards = await sql(awardsQuery, queryParams);
+
+    // Get total count
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM awards
+      ${whereClause}
+    `;
+
+    const [{ total }] = await sql(countQuery, queryParams.slice(0, -2));
+
+    return Response.json({
+      awards,
+      pagination: {
+        page,
+        limit,
+        total: parseInt(total),
+        pages: Math.ceil(total / limit),
+      },
+    });
   } catch (error) {
     console.error("Error fetching awards:", error);
     return Response.json({ error: "Failed to fetch awards" }, { status: 500 });
